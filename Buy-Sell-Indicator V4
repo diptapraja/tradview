@@ -1,0 +1,167 @@
+//@version=6
+indicator("Dipta Auto Signal (v4 - Responsive)", overlay=true, precision=4)
+
+// === INPUT ===
+mode = input.string(defval="Investing", title="Mode", options=["Investing", "Scalping"])
+useSupertrend = input.bool(true, title="Use Supertrend for Potential Buy Hold?")
+rsiLength = input.int(10, title="RSI Length", minval=5, maxval=50)
+bbLength = input.int(20, title="BB Length", minval=5, maxval=50)
+bbMult = input.float(2.0, title="BB Multiplier", minval=1.5, maxval=3.0)
+minTrendBars = input.int(3, title="Minimum Bars for Hold Signal", minval=1, maxval=10)
+atrLength = input.int(14, title="ATR Length", minval=5, maxval=20)
+factor = input.float(3.0, title="Supertrend Factor", minval=1.5, maxval=5.0)
+capital = input.float(5.0, title="Capital/Modal", minval=1.5, maxval=100.0)
+
+// Relaxed Inputs
+rsiThresholdBuy = input.int(35, title="RSI Buy Threshold", minval=10, maxval=45)  // More relaxed
+rsiThresholdSell = input.int(75, title="RSI Sell Threshold", minval=55, maxval=90) // More relaxed
+bbDeviationFactor = input.float(1.5, title="BB Deviation Factor (%)", minval=0.5, maxval=3.0)
+validCandleBodyRatio = input.float(0.3, title="Min Body/Range Ratio", minval=0.1, maxval=0.9) // Lower threshold
+volatilityMultiplier = input.float(2.5, title="Volatility ATR Multiplier", minval=1.5, maxval=5.0) // Higher threshold
+confirmationBars = input.int(1, title="Signal Confirmation Bars", minval=0, maxval=2) // Fewer confirmations
+volumeFilter = input.bool(false, title="Use Volume Filter") // Disabled by default
+minVolumeFactor = input.float(1.0, title="Min Volume Factor vs MA", minval=0.5, maxval=3.0) // Lower threshold
+
+// === VARIABLES ===
+var int holdPotentialBuyCounter = 0
+var bool holdPotentialBuy = false
+var int buyConfirmationCount = 0
+var int sellConfirmationCount = 0
+
+// === ENHANCED LOGIC ===
+// 1. Volume Analysis (optional)
+volumeMA = ta.sma(volume, 20)
+isHighVolume = volume > volumeMA * minVolumeFactor
+
+// 2. Enhanced RSI with smoothing
+rsi = ta.rsi(close, rsiLength)
+smoothedRSI = ta.ema(rsi, 3)
+
+// 3. Bollinger Bands with adaptive multiplier
+basis = ta.sma(close, bbLength)
+dev = bbMult * ta.stdev(close, bbLength)
+upper = basis + dev
+lower = basis - dev
+
+// 4. ATR-based volatility measurement
+atr = ta.atr(atrLength)
+candleRange = high - low
+body = math.abs(close - open)
+bodyRatio = body / candleRange
+isValidCandle = bodyRatio > validCandleBodyRatio
+isVolatile = candleRange > (atr * volatilityMultiplier)
+
+// 5. Enhanced Supertrend with confirmation
+[supertrend, direction] = ta.supertrend(factor, atrLength)
+
+// 6. Price Action Filter (simplified)
+isBullishReversal = close > open and close > close[1]
+isBearishReversal = close < open and close < close[1]
+
+// 7. Trend Confirmation
+emaFast = ta.ema(close, 9)
+emaSlow = ta.ema(close, 21)
+isUptrend = emaFast >= emaSlow  // More lenient
+isDowntrend = emaFast <= emaSlow // More lenient
+
+// === SIGNAL GENERATION ===
+// Relaxed buy conditions
+baseBuyCondition = smoothedRSI < rsiThresholdBuy and close <= lower * 1.02 and not isVolatile // 2% outside BB
+enhancedBuyCondition = baseBuyCondition and (not volumeFilter or isHighVolume) and (isUptrend or direction == 1)
+
+// Relaxed sell conditions
+baseSellCondition = smoothedRSI > rsiThresholdSell and close >= upper * 0.98 and not isVolatile // 2% outside BB
+enhancedSellCondition = baseSellCondition and (not volumeFilter or isHighVolume) and (isDowntrend or direction == -1)
+
+// Immediate potential signals
+potentialBuy = baseBuyCondition
+potentialSell = baseSellCondition
+
+// Signal confirmation logic
+if enhancedBuyCondition
+    buyConfirmationCount := buyConfirmationCount + 1
+else
+    buyConfirmationCount := 0
+
+if enhancedSellCondition
+    sellConfirmationCount := sellConfirmationCount + 1
+else
+    sellConfirmationCount := 0
+
+confirmedBuy = buyConfirmationCount >= confirmationBars
+confirmedSell = sellConfirmationCount >= confirmationBars
+
+// === VISUALIZATION ===
+// Immediate potential signals (small markers)
+plotshape(potentialBuy, title="Potential Buy", location=location.belowbar, color=color.new(color.lime, 0), style=shape.triangleup, size=size.small)
+plotshape(potentialSell, title="Potential Sell", location=location.abovebar, color=color.new(color.orange, 0), style=shape.triangledown, size=size.small)
+
+// Confirmed signals (larger markers)
+plotshape(confirmedBuy, title="Confirmed Buy", location=location.belowbar, color=color.new(color.green, 0), style=shape.labelup, text="BUY", size=size.normal)
+plotshape(confirmedSell, title="Confirmed Sell", location=location.abovebar, color=color.new(color.red, 0), style=shape.labeldown, text="SELL", size=size.normal)
+
+// Hold signal
+plotshape(holdPotentialBuy, title="Hold Buy", location=location.belowbar, color=color.new(color.blue, 0), style=shape.circle, size=size.tiny)
+
+// === RISK MANAGEMENT ===
+riskPercent = input.float(1.0, title="Risk Percentage", minval=0.1, maxval=5.0, step=0.1)
+positionSize = (capital / atr) * (riskPercent / 100)
+
+suggestedBuyPrice = confirmedBuy ? close * 0.998 : na
+suggestedSellPrice = confirmedSell ? close * 1.002 : na
+
+stopLossPct = input.float(1.5, title="Stop Loss %", minval=0.5, maxval=5.0, step=0.1)
+takeProfitPct = input.float(3.0, title="Take Profit %", minval=1.0, maxval=10.0, step=0.1)
+
+stopLossPrice = not na(suggestedBuyPrice) ? suggestedBuyPrice * (1 - stopLossPct/100) : na
+takeProfitPrice = not na(suggestedBuyPrice) ? suggestedBuyPrice * (1 + takeProfitPct/100) : na
+
+// === TELEGRAM ALERT ===
+// Alert untuk Potential Buy/Sell
+alertcondition(potentialBuy, 
+     title="🚨 POTENTIAL BUY", 
+     message="POTENTIAL BUY - {{ticker}} (Harga: {{close}}) | RSI: {{plot_0}} | Mode: {{strategy.market_position}}")
+
+alertcondition(potentialSell, 
+     title="🚨 POTENTIAL SELL", 
+     message="POTENTIAL SELL - {{ticker}} (Harga: {{close}}) | RSI: {{plot_0}} | Mode: {{strategy.market_position}}")
+
+// Alert untuk Confirmed Buy/Sell (Opsional)
+alertcondition(confirmedBuy, 
+     title="✅ CONFIRMED BUY", 
+     message="CONFIRMED BUY - {{ticker}} (Harga: {{close}}) | SL: {{plot_1}} | TP: {{plot_2}}")
+
+alertcondition(confirmedSell, 
+     title="✅ CONFIRMED SELL", 
+     message="CONFIRMED SELL - {{ticker}} (Harga: {{close}})")
+
+// === DEBUG INFO ===
+var label debugLabel = na
+if barstate.islast
+    debugText = "RSI: " + str.tostring(smoothedRSI, "#.##") + 
+              "\nBB Position: " + str.tostring((close-lower)/(upper-lower)*100, "#.##") + "%" +
+              "\nTrend: " + (isUptrend ? "Up" : isDowntrend ? "Down" : "Neutral") + 
+              "\n\nSignals:" +
+              "\nPotential Buy: " + (potentialBuy ? "YES" : "NO") +
+              "\nPotential Sell: " + (potentialSell ? "YES" : "NO") +
+              "\nConfirmed Buy: " + (confirmedBuy ? "YES" : "NO") +
+              "\nConfirmed Sell: " + (confirmedSell ? "YES" : "NO") +
+              
+              "\n\n=== RISK MANAGEMENT ===" +
+              "\nCapital: $" + str.tostring(capital, "#.##") +
+              "\nRisk: " + str.tostring(riskPercent, "#.#") + "%" +
+              "\nPosition Size: " + str.tostring(positionSize, "#.#####") + " units" +
+              "\nStop Loss: " + (confirmedBuy ? str.tostring(stopLossPct, "#.#") + "% (" + str.tostring(stopLossPrice, "#.########") + ")" : "N/A") + 
+              "\nTake Profit: " + (confirmedBuy ? str.tostring(takeProfitPct, "#.#") + "% (" + str.tostring(takeProfitPrice, "#.########") + ")" : "N/A") +
+              "\nRisk/Reward: " + (confirmedBuy ? "1:" + str.tostring(takeProfitPct/stopLossPct, "#.##") : "N/A")
+    
+    label.delete(debugLabel)
+    debugLabel := label.new(
+         bar_index, 
+         high, 
+         text=debugText, 
+         style=label.style_label_left, 
+         color=color.new(#2B2B2B, 90), 
+         textcolor=color.white, 
+         size=size.normal,
+         textalign=text.align_left)
