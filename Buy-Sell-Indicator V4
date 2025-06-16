@@ -161,7 +161,7 @@ if barstate.islast
          high, 
          text=debugText, 
          style=label.style_label_left, 
-         color=color.new(#2B2B2B, 90), 
+         color=color.new(#2B2B2B, 50), 
          textcolor=color.white, 
          size=size.normal,
          textalign=text.align_left)
