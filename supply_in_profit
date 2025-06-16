@@ -1,0 +1,30 @@
+//@version=5
+indicator("Simulasi Supply in Profit - Titik Warna", overlay=true)
+
+// VWAP harian
+vwapD = request.security(syminfo.tickerid, "D", ta.vwap)
+
+// MA50 & MA200
+ma50 = ta.sma(close, 50)
+ma200 = ta.sma(close, 200)
+
+// Kondisi profit
+profitShort = close > vwapD
+profitMid = close > ma50
+profitLong = close > ma200
+
+// Warna titik
+dotColor = profitShort and profitMid and profitLong ? color.red :
+           profitShort and profitMid ? color.orange :
+           profitShort ? color.green :
+           color.blue
+
+// Latar belakang (opsional, bisa dihapus jika ingin minimalis)
+bgColor = profitShort and profitMid and profitLong ? color.new(color.orange, 85) :
+          profitShort and profitMid ? color.new(color.yellow, 90) :
+          profitShort ? color.new(color.green, 95) :
+          na
+bgcolor(bgColor)
+
+// Plot titik warna kecil di atas candle
+plotshape(true, title="Profit Dot", location=location.abovebar, color=dotColor, style=shape.circle, size=size.tiny)
