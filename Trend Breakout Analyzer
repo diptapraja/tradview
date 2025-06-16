@@ -1,5 +1,5 @@
 //@version=6
-indicator("Scalping Trend Breakout v6 Revised", overlay=true)
+indicator("Trend Breakout v6 Revised", overlay=true)
 
 // === INPUT ===
 breakoutLevel = input.int(3, minval=1, maxval=5, title="Breakout Sensitivity Level")
