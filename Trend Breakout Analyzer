@@ -1,0 +1,121 @@
+//@version=6
+indicator("Scalping Trend Breakout v6 Revised", overlay=true)
+
+// === INPUT ===
+breakoutLevel = input.int(3, minval=1, maxval=5, title="Breakout Sensitivity Level")
+rrRatio = input.float(1.5, title="Risk/Reward Ratio", minval=0.5)
+period_atr = input.int(14, title="Periode VOLATILITY", minval=5)
+showDebug = input.bool(true, title="Show Debug Info")
+
+// === TREND DIRECTION ===
+ema50 = ta.ema(close, 50)
+ema200 = ta.ema(close, 200)
+
+trendLong = ema50 > ema200
+trendShort = ema50 < ema200
+
+// === MOVING AVERAGES FOR DYNAMIC ENTRY ===
+ma5 = ta.ema(close, 5)
+ma10 = ta.ema(close, 10)
+ma30 = ta.ema(close, 30)
+ma60 = ta.ema(close, 60)
+
+// === ATR & VOLATILITY ===
+atr = ta.atr(period_atr)
+highVolatility = atr > ta.sma(atr, period_atr)
+
+// === BREAKOUT DYNAMIC LOOKBACK ===
+baseLookback = 5
+dynamicLookback = baseLookback + (breakoutLevel - 1) * 2
+
+prevHigh = ta.highest(high[1], dynamicLookback)
+prevLow  = ta.lowest(low[1], dynamicLookback)
+
+breakLong = close > prevHigh
+breakShort = close < prevLow
+
+// === MINOR BREAKOUT ===
+minorLookback = math.max(1, dynamicLookback / 2)
+minorHigh = ta.highest(high[1], minorLookback)
+minorLow  = ta.lowest(low[1], minorLookback)
+
+breakMinorLong = close > minorHigh
+breakMinorShort = close < minorLow
+
+// === STRONG CANDLE ===
+body = math.abs(close - open)
+candleRange = high - low
+strongCandle = body > candleRange * 0.6
+
+// === ENTRY SIGNAL ===
+entryLong = trendLong and (breakLong or breakMinorLong)
+entryShort = trendShort and (breakShort or breakMinorShort)
+
+entrySignal = breakLong or breakShort ? "Strong Breakout" :
+              breakMinorLong or breakMinorShort ? "Minor Breakout" :
+              trendLong or trendShort ? "Trend Only (No Breakout)" :
+              "Waiting/Sideways"
+
+// === RISK STATUS ===
+riskStatus = highVolatility and entrySignal == "Waiting/Sideways" ? "High Risk" :
+             (breakLong or breakShort or breakMinorLong or breakMinorShort) ? "Neutral" :
+             "Low Risk"
+
+// === BREAKOUT TYPE INFO ===
+breakoutType = 
+     breakLong ? "Breakout Resistance" :
+     breakShort ? "Breakout Support" :
+     (close < prevHigh and close > prevLow) ? "Range/Konsolidasi" :
+     "None"
+
+// === REVISED ENTRY PRICE / TP / SL ===
+getEntryPrice() =>
+    if entryLong
+        // Untuk long, pertengahan antara MA5 dan MA10
+        math.avg(ma5, ma10)
+    else if entryShort
+        // Untuk short, pertengahan antara MA30 dan MA60
+        math.avg(ma30, ma60)
+    else if trendLong
+        close
+    else if trendShort
+        close
+    else
+        na
+
+entryPrice = getEntryPrice()
+
+tpPrice = entryLong ? entryPrice + atr * rrRatio :
+          entryShort ? entryPrice - atr * rrRatio :
+          trendLong ? close + atr * rrRatio :
+          trendShort ? close - atr * rrRatio : na
+
+slPrice = entryLong ? entryPrice - atr :
+          entryShort ? entryPrice + atr :
+          trendLong ? close - atr :
+          trendShort ? close + atr : na
+
+// ========== DEBUG TABLE MULTI-BARIS ==========
+var table debugTable = table.new(position.top_right, 1, 8, border_width = 1)
+
+// Baris-baris debug
+debugSignal     = "Signal: " + entrySignal
+debugTrend      = "Trend: " + (trendLong ? "LONG" : trendShort ? "SHORT" : "NEUTRAL")
+debugRisk       = "Risk: " + riskStatus
+debugEntry      = "Entry: " + (na(entryPrice) ? "N/A" : str.tostring(entryPrice, "#.######"))
+debugTP         = "TP: " + (na(tpPrice) ? "N/A" : str.tostring(tpPrice, "#.######"))
+debugSL         = "SL: " + (na(slPrice) ? "N/A" : str.tostring(slPrice, "#.######"))
+debugBreakout   = "BreakoutLvl: " + str.tostring(breakoutLevel)
+debugLookback   = "Lookback: " + str.tostring(dynamicLookback)
+debugBreakoutType = "Breakout Type: " + breakoutType
+
+// Update isi tabel setiap candle
+if bar_index % 1 == 0
+    table.cell(debugTable, 0, 0, debugSignal,    text_color=color.white, bgcolor=color.new(color.gray, 10), text_size=size.small)
+    table.cell(debugTable, 0, 1, debugTrend,     text_color=color.white, bgcolor=color.new(color.gray, 20), text_size=size.small)
+    table.cell(debugTable, 0, 2, debugRisk,      text_color=color.white, bgcolor=color.new(color.gray, 20), text_size=size.small)
+    table.cell(debugTable, 0, 3, debugEntry,     text_color=color.white, bgcolor=color.new(color.gray, 20), text_size=size.small)
+    table.cell(debugTable, 0, 4, debugTP,        text_color=color.white, bgcolor=color.new(color.gray, 20), text_size=size.small)
+    table.cell(debugTable, 0, 5, debugSL,        text_color=color.white, bgcolor=color.new(color.gray, 20), text_size=size.small)
+    table.cell(debugTable, 0, 6, debugBreakout,  text_color=color.white, bgcolor=color.new(color.gray, 20), text_size=size.small)
+    table.cell(debugTable, 0, 7, debugLookback,  text_color=color.white, bgcolor=color.new(color.gray, 20), text_size=size.small)
