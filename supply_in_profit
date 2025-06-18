@@ -1,30 +1,113 @@
 //@version=5
-indicator("Simulasi Supply in Profit - Titik Warna", overlay=true)
+indicator("Enhanced Supply in Profit with Trend Analysis", overlay=true)
+
+// Input parameters
+shortTrendLength = input(20, title="Short Trend Length")
+midTrendLength = input(50, title="Medium Trend Length")
+rsiLength = input(14, title="RSI Length")
+extremeBearishThreshold = input(20, title="Extreme Bearish RSI Threshold")
 
 // VWAP harian
 vwapD = request.security(syminfo.tickerid, "D", ta.vwap)
 
-// MA50 & MA200
-ma50 = ta.sma(close, 50)
+// Moving Averages
+ma20 = ta.sma(close, shortTrendLength)
+ma50 = ta.sma(close, midTrendLength)
 ma200 = ta.sma(close, 200)
 
-// Kondisi profit
+// RSI Calculation
+rsi = ta.rsi(close, rsiLength)
+
+// Trend conditions
+uptrendShort = close > ma20 and ma20 > ma20[1]
+uptrendMid = close > ma50 and ma50 > ma50[1]
+uptrendLong = close > ma200 and ma200 > ma200[1]
+
+// Profit conditions
 profitShort = close > vwapD
 profitMid = close > ma50
 profitLong = close > ma200
 
-// Warna titik
-dotColor = profitShort and profitMid and profitLong ? color.red :
-           profitShort and profitMid ? color.orange :
-           profitShort ? color.green :
-           color.blue
+// Below average conditions
+belowAll = close < vwapD and close < ma50 and close < ma200
+farBelowAll = close < vwapD * 0.95 and close < ma50 * 0.95 and close < ma200 * 0.95
+extremeBearish = farBelowAll and rsi < extremeBearishThreshold
 
-// Latar belakang (opsional, bisa dihapus jika ingin minimalis)
-bgColor = profitShort and profitMid and profitLong ? color.new(color.orange, 85) :
-          profitShort and profitMid ? color.new(color.yellow, 90) :
-          profitShort ? color.new(color.green, 95) :
-          na
-bgcolor(bgColor)
+// Determine color based on conditions (gradual)
+dotColor = if profitShort and profitMid and profitLong
+    if uptrendShort and uptrendMid and uptrendLong
+        color.rgb(150, 70, 255) // Violet (kuat & lengkap)
+    else if uptrendShort and uptrendMid
+        color.rgb(200, 100, 200) // Fuchsia lembut
+    else
+        color.rgb(255, 100, 100) // Pinkish red
+else if profitShort and profitMid
+    if uptrendShort and uptrendMid
+        color.rgb(255, 200, 0) // Cerah keemasan
+    else
+        color.rgb(255, 165, 0) // Orange lembut
+else if profitShort
+    if uptrendShort
+        color.rgb(0, 200, 0) // Hijau murni
+    else
+        color.rgb(0, 180, 100) // Hijau lime
+else if extremeBearish
+    color.rgb(30, 30, 30) // Abu sangat gelap
+else if farBelowAll
+    color.rgb(80, 80, 80) // Abu tua
+else if belowAll
+    color.rgb(60, 90, 160) // Biru netral
+else
+    color.rgb(30, 30, 80) // Biru gelap (default fallback)
 
-// Plot titik warna kecil di atas candle
-plotshape(true, title="Profit Dot", location=location.abovebar, color=dotColor, style=shape.circle, size=size.tiny)
+// Plotting
+plotshape(true, title="Supply in Profit", location=location.abovebar, 
+         color=dotColor, style=shape.circle, size=size.tiny)
+
+// Background color for visual reference (gradual)
+bgColor = if profitShort and profitMid and profitLong
+    if uptrendShort and uptrendMid and uptrendLong
+        color.new(color.rgb(150, 70, 255), 90)
+    else if uptrendShort and uptrendMid
+        color.new(color.rgb(200, 100, 200), 90)
+    else
+        color.new(color.rgb(255, 100, 100), 90)
+else if profitShort and profitMid
+    if uptrendShort and uptrendMid
+        color.new(color.rgb(255, 200, 0), 90)
+    else
+        color.new(color.rgb(255, 165, 0), 90)
+else if profitShort
+    if uptrendShort
+        color.new(color.rgb(0, 200, 0), 95)
+    else
+        color.new(color.rgb(0, 180, 100), 95)
+else if extremeBearish
+    color.new(color.rgb(30, 30, 30), 80)
+else if farBelowAll
+    color.new(color.rgb(80, 80, 80), 85)
+else if belowAll
+    color.new(color.rgb(60, 90, 160), 90)
+else
+    color.new(color.rgb(30, 30, 80), 90)
+
+// Buat tabel 2 kolom 10 baris di kanan atas layar
+var table infoTable = table.new(position.top_right, 2, 10, border_width=1)
+
+// Fungsi bantu isi baris dengan lingkaran warna dan teks deskripsi
+f_addRow(row, colorCircle, txt) =>
+    table.cell(infoTable, 0, row, "●", text_color=colorCircle, bgcolor=color.new(color.gray, 80))
+    table.cell(infoTable, 1, row, txt, bgcolor=color.new(color.gray, 80), text_color=color.white)
+
+// Isi tabel dengan warna dan keterangan
+if barstate.islast
+    f_addRow(0, color.rgb(150, 70, 255), "All profit + strong uptrend (Purple)")
+    f_addRow(1, color.rgb(200, 100, 200), "All profit + med uptrend (Fuchsia)")
+    f_addRow(2, color.rgb(255, 100, 100), "All profit, no trend (Red)")
+    f_addRow(3, color.rgb(255, 200, 0), "Short/Mid profit with trend (Orange)")
+    f_addRow(4, color.rgb(255, 165, 0), "Short/Mid profit no trend (Dark Orange)")
+    f_addRow(5, color.rgb(0, 200, 0), "Short profit with trend (Green)")
+    f_addRow(6, color.rgb(0, 180, 100), "Short profit no trend (Lime)")
+    f_addRow(7, color.rgb(60, 90, 160), "Below all averages (Blue)")
+    f_addRow(8, color.rgb(80, 80, 80), "Far below averages (Gray)")
+    f_addRow(9, color.rgb(30, 30, 30), "Extreme bearish (far below + low RSI) (Black)")
